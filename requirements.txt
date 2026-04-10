@@ -1,7 +1,7 @@
 streamlit
 streamlit-webrtc
-mediapipe
+mediapipe==0.10.0
 opencv-python-headless
 groq
 gTTS
-av
+pyav
