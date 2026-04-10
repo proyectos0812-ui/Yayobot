@@ -1,4 +1,7 @@
 streamlit
-streamlit-mic-recorder
+streamlit-webrtc
+mediapipe
+opencv-python-headless
 groq
 gTTS
+av
