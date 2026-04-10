@@ -1,34 +1,12 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
-import av
-import mediapipe as mp
-import cv2
-import random
-from groq import Groq
-from gtts import gTTS
-import base64
 
-# --- 1. CONFIGURACIÓN DE IA Y VISIÓN ---
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
-mp_drawing = mp.solutions.drawing_utils
-
-# --- 2. CONFIGURACIÓN DE PÁGINA Y ESTILO ---
+# --- 1. CONFIGURACIÓN DE PÁGINA Y ESTILO (Primero para evitar errores visuales) ---
 st.set_page_config(page_title="Yayobot Vision Pro", page_icon="👵")
 
 st.markdown("""
     <style>
-    /* Fondo claro */
-    [data-testid="stAppViewContainer"] {
-        background-color: #f0f2f6 !important;
-    }
-    /* Título Yayobot en Rojo */
-    h1 {
-        color: #FF4B4B !important;
-        text-align: center !important;
-        font-weight: 800 !important;
-    }
+    [data-testid="stAppViewContainer"] { background-color: #f0f2f6 !important; }
+    h1 { color: #FF4B4B !important; text-align: center; font-weight: 800 !important; }
     /* BOTÓN DE CÁMARA BLANCO */
     button {
         background-color: #ffffff !important;
@@ -46,40 +24,62 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("👵 Yayobot Pro")
-st.write("### 🎥 Vigilancia de Clavículas Activa")
+# --- 2. IMPORTACIONES DE LIBRERÍAS ---
+from streamlit_webrtc import webrtc_streamer
+import av
+import cv2
+import mediapipe as mp
+from groq import Groq
 
-# --- 3. PROCESAMIENTO DE VÍDEO (Líneas Azules) ---
+# Intentamos cargar MediaPipe con seguridad
+try:
+    mp_pose = mp.solutions.pose
+    mp_drawing = mp.solutions.drawing_utils
+    pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+except AttributeError:
+    st.error("Error crítico: Parece que hay un archivo llamado 'mediapipe.py' en tu carpeta. Por favor, cámbiale el nombre para que la IA funcione.")
+
+# --- 3. LÓGICA DE LA IA (Groq) ---
+# Asegúrate de tener GROQ_API_KEY en los Secrets de Streamlit
+if "GROQ_API_KEY" in st.secrets:
+    client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+else:
+    st.warning("⚠️ No se encontró la clave de Groq en los Secrets.")
+
+# --- 4. PROCESAMIENTO DE VÍDEO (Las líneas azules) ---
 def video_frame_callback(frame):
     img = frame.to_ndarray(format="bgr24")
     
-    # MediaPipe necesita RGB
+    # Conversión necesaria para que la IA lea la imagen
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
     results = pose.process(img_rgb)
 
     if results.pose_landmarks:
-        # Dibujamos el esqueleto con líneas azules/cian
+        # DIBUJAMOS EL ESQUELETO AZUL/CIAN
         mp_drawing.draw_landmarks(
             img, 
             results.pose_landmarks, 
             mp_pose.POSE_CONNECTIONS,
             mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2, circle_radius=2), # Puntos
-            mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=3) # Líneas (Cian)
+            mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=3) # Líneas Cian (Azul claro)
         )
 
-        # Lógica de detección de caída (Hombros/Clavícula)
-        # El punto Y va de 0.0 (arriba) a 1.0 (abajo)
+        # DETECCIÓN DE CAÍDA (Si la clavícula baja mucho)
+        # El hombro izquierdo es el punto 11, el derecho el 12
         h_izq = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y
         h_der = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y
         
-        # Si los hombros bajan del 80% de la pantalla
+        # 0.8 significa el 80% de la pantalla hacia abajo
         if h_izq > 0.8 or h_der > 0.8:
             cv2.putText(img, "!!! CAIDA DETECTADA !!!", (30, 100), 
                         cv2.FONT_HERSHEY_SIMPLEX, 1.5, (0, 0, 255), 4)
 
     return av.VideoFrame.from_ndarray(img, format="bgr24")
 
-# --- 4. COMPONENTE DE VÍDEO ---
+# --- 5. INTERFAZ DE USUARIO ---
+st.title("👵 Yayobot Pro")
+st.write("Haz clic en **Start** para activar la vigilancia de clavículas.")
+
 webrtc_streamer(
     key="yayovision", 
     video_frame_callback=video_frame_callback,
@@ -87,4 +87,4 @@ webrtc_streamer(
     media_stream_constraints={"video": True, "audio": False}
 )
 
-st.info("💡 Yayobot está analizando tu postura en tiempo real. Si detecta que tus hombros bajan demasiado, saltará la alerta.")
+st.info("💡 Consejo: Asegúrate de que se vea bien tu torso para que Yayobot pueda dibujar las líneas de la clavícula.")
