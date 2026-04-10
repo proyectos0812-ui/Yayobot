@@ -1,74 +1,67 @@
 import streamlit as st
-from streamlit_mic_recorder import speech_to_text
+from streamlit_webrtc import webrtc_streamer
+import av
+import mediapipe as mp
+import cv2
+import random
 from groq import Groq
 from gtts import gTTS
 import base64
-import random
 
-# Configuración inicial
-st.set_page_config(page_title="Yayobot", page_icon="👵")
+# --- CONFIGURACIÓN DE IA ---
+mp_pose = mp.solutions.pose
+pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+mp_drawing = mp.solutions.drawing_utils
 
-# ESTILO PARA CAMBIAR EL BOTÓN A BLANCO
+st.set_page_config(page_title="Yayobot Vision", page_icon="👵")
+
+# --- ESTILO (Botón Blanco y Título Rojo) ---
 st.markdown("""
     <style>
-    /* Cambiar el fondo de la app para que el botón blanco se vea */
-    [data-testid="stAppViewContainer"] {
-        background-color: #f0f2f6 !important;
-    }
-
-    /* EL BOTÓN: Fondo blanco, texto rojo y bordes redondeados */
+    .stApp { background-color: #f0f2f6 !important; }
+    h1 { color: #FF4B4B !important; text-align: center; }
+    /* BOTÓN BLANCO */
     button {
         background-color: #ffffff !important;
         color: #FF4B4B !important;
         border: 2px solid #FF4B4B !important;
-        border-radius: 25px !important;
-        height: 60px !important;
-        width: 100% !important;
+        border-radius: 20px !important;
         font-weight: bold !important;
-        font-size: 18px !important;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05) !important;
-    }
-    
-    /* Efecto al pasar el ratón por encima */
-    button:hover {
-        background-color: #FF4B4B !important;
-        color: white !important;
-    }
-
-    h1 {
-        color: #FF4B4B !important;
-        text-align: center;
     }
     </style>
     """, unsafe_allow_html=True)
 
-st.title("👵 Yayobot")
+st.title("👵 Yayobot Pro")
 
-# Conexión Groq
-client = Groq(api_key=st.secrets["GROQ_API_KEY"])
+# --- PROCESAMIENTO DE VÍDEO ---
+def video_frame_callback(frame):
+    img = frame.to_ndarray(format="bgr24")
+    img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    results = pose.process(img_rgb)
 
-def hablar(texto):
-    tts = gTTS(text=texto, lang='es', tld='es')
-    nombre = f"v_{random.randint(1,999)}.mp3"
-    tts.save(nombre)
-    with open(nombre, "rb") as f:
-        data = f.read()
-        b64 = base64.b64encode(data).decode()
-        st.markdown(f'<audio autoplay="true"><source src="data:audio/mp3;base64,{b64}" type="audio/mp3"></audio>', unsafe_allow_html=True)
+    if results.pose_landmarks:
+        # DIBUJAR LÍNEAS AZULES (Clavículas y Torso)
+        mp_drawing.draw_landmarks(
+            img, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+            mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=3, circle_radius=3), # Puntos azules
+            mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=3) # Líneas cian/azul
+        )
 
-# Interfaz
-text = speech_to_text(language='es', start_prompt="🎤 TOCA PARA HABLAR", stop_prompt="✅ ENVIAR", key='yayo_blanco')
+        # DETECTAR CAÍDA (Si los hombros bajan del 80% de la pantalla)
+        h_izq = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y
+        h_der = results.pose_landmarks.landmark[mp_pose.PoseLandmark.RIGHT_SHOULDER].y
+        
+        if h_izq > 0.8 or h_der > 0.8:
+            cv2.putText(img, "¡CAIDA!", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,255), 5)
 
-if text:
-    st.info(f"**Tú:** {text}")
-    
-    mensajes = [
-        {"role": "system", "content": "Eres Yayobot, un asistente amigable. Responde corto."},
-        {"role": "user", "content": text}
-    ]
-    
-    completion = client.chat.completions.create(messages=mensajes, model="llama-3.1-8b-instant")
-    respuesta = completion.choices[0].message.content
-    
-    st.success(f"**Yayobot:** {respuesta}")
-    hablar(respuesta)
+    return av.VideoFrame.from_ndarray(img, format="bgr24")
+
+# --- CÁMARA ---
+st.write("### 🎥 Vigilancia activa")
+webrtc_streamer(
+    key="yayovision", 
+    video_frame_callback=video_frame_callback,
+    rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]}
+)
+
+st.info("Yayobot te avisará si detecta una caída analizando tu clavícula.")
