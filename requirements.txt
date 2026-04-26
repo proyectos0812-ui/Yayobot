@@ -1,7 +1,6 @@
+protobuf==3.20.3
+mediapipe==0.10.11
 streamlit
 streamlit-webrtc
-mediapipe
 opencv-python-headless
-groq
-gTTS
 av
