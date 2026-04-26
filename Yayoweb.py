@@ -1,18 +1,17 @@
 import streamlit as st
-from streamlit_webrtc import webrtc_streamer
 import av
 import cv2
 import mediapipe as mp
-from groq import Groq
+from streamlit_webrtc import webrtc_streamer
 
-# --- CONFIGURACIÓN ---
-st.set_page_config(page_title="Yayobot Vision Pro", page_icon="👵")
+# --- 1. CONFIGURACIÓN Y ESTILO ---
+st.set_page_config(page_title="Yayobot", page_icon="👵")
 
-# Estilo: Botón Blanco y Título Rojo
 st.markdown("""
     <style>
     [data-testid="stAppViewContainer"] { background-color: #f0f2f6 !important; }
-    h1 { color: #FF4B4B !important; text-align: center; }
+    h1 { color: #FF4B4B !important; text-align: center; font-weight: 800 !important; }
+    /* BOTÓN BLANCO */
     button {
         background-color: #ffffff !important;
         color: #FF4B4B !important;
@@ -24,36 +23,45 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-st.title("👵 Yayobot Pro")
+st.title("👵 Yayobot") # Quitamos el Pro
 
-# Inicializar MediaPipe
-mp_pose = mp.solutions.pose
-pose = mp_pose.Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+# --- 2. CARGA SEGURA DE MEDIAPIPE ---
+# Usamos soluciones directas para evitar el error de 'AttributeError'
+Pose = mp.solutions.pose.Pose
 mp_drawing = mp.solutions.drawing_utils
+mp_pose_frames = mp.solutions.pose
 
+pose_tracker = Pose(min_detection_confidence=0.5, min_tracking_confidence=0.5)
+
+# --- 3. PROCESAMIENTO DE VÍDEO ---
 def video_frame_callback(frame):
     img = frame.to_ndarray(format="bgr24")
+    
+    # IA analiza la imagen
     img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    results = pose.process(img_rgb)
+    results = pose_tracker.process(img_rgb)
 
     if results.pose_landmarks:
-        # Dibujar esqueleto azul
+        # Dibujamos las líneas azules (Cian)
         mp_drawing.draw_landmarks(
-            img, results.pose_landmarks, mp_pose.POSE_CONNECTIONS,
+            img, results.pose_landmarks, mp_pose_frames.POSE_CONNECTIONS,
             mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2, circle_radius=2),
             mp_drawing.DrawingSpec(color=(255, 255, 0), thickness=3)
         )
         
-        # Lógica de caída (Clavícula baja)
-        h_izq = results.pose_landmarks.landmark[mp_pose.PoseLandmark.LEFT_SHOULDER].y
+        # Detección de caída simple
+        h_izq = results.pose_landmarks.landmark[mp_pose_frames.PoseLandmark.LEFT_SHOULDER].y
         if h_izq > 0.8:
             cv2.putText(img, "CAIDA!", (50, 100), cv2.FONT_HERSHEY_SIMPLEX, 2, (0,0,255), 4)
 
     return av.VideoFrame.from_ndarray(img, format="bgr24")
 
+# --- 4. CÁMARA ---
 webrtc_streamer(
-    key="yayobot",
+    key="yayobot-cam",
     video_frame_callback=video_frame_callback,
     rtc_configuration={"iceServers": [{"urls": ["stun:stun.l.google.com:19302"]}]},
     media_stream_constraints={"video": True, "audio": False}
 )
+
+st.info("💡 Yayobot está listo. Si ves las líneas azules, la IA está funcionando.")
